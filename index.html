@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport"
+        content="width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0">
+
+  <title>United States Educational Attainment</title>
+  <!-- <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>-->
+  <!-- <script src="https://cdnjs.cloudflare.com/ajax/libs/topojson/3.0.2/topojson.min.js"></script>-->
+
+  <link href="css/bootstrap.min.css" rel="stylesheet" type="text/css">
+  <style>
+    #tooltip {
+      position: absolute;
+      text-align: center;
+      font-size: 12px;
+      background: lightsteelblue;
+      padding: 5px 10px;
+      box-shadow: 1px 1px 10px;
+      border-radius: 5px;
+      pointer-events: none;
+    }
+
+    .states {
+      fill: none;
+      stroke: #fff;
+    }
+  </style>
+
+  <script src="js/bootstrap.bundle.min.js" type="text/javascript"></script>
+  <script src="js/d3.min.js"></script>
+  <script src="js/topojson.min.js"></script>
+</head>
+<body>
+<div class="container">
+  <h1 id="title" class="mt-5 mb-2 text-center">United States Educational Attainment</h1>
+  <h5 id="description" class="fw-normal mb-2 text-center">Percentage of adults age 25 and older with a bachelor's degree or higher (2010-2014)</h5>
+  <div id="source" class="text-center mb-5">
+    Source:
+    <a href="https://www.ers.usda.gov/data-products/county-level-data-sets/download-data.aspx">USDA Economic Research Service</a>
+  </div>
+
+  <div class="legend-outer-wrapper text-center">
+    <div class="legend-inner-wrapper d-inline-block"></div>
+  </div>
+
+  <div class="svg-outer-wrapper position-relative overflow-x-auto overflow-y-hidden">
+    <div class="svg-inner-wrapper ms-auto me-auto"></div>
+  </div>
+</div>
+
+<script>
+  var svgWidth = 936;
+  var svgHeight = 630;
+
+  var tooltipWidth = 120;
+  var tooltipMinHeight = 50;
+
+  var legendPaddingX = 20;
+  var legendPaddingBottom = 20;
+  var legendWidth = 350;
+  var legendHeight = 40;
+
+  var colors = [
+    {
+      background: '#75a2c1',
+      text: 'white',
+    },
+    {
+      background: '#5e8cad',
+      text: 'white',
+    },
+    {
+      background: '#46769e',
+      text: 'white',
+    },
+    {
+      background: '#305f8b',
+      text: 'white',
+    },
+    {
+      background: '#164879',
+      text: 'white',
+    },
+    {
+      background: '#013567',
+      text: 'white',
+    },
+    {
+      background: '#141F40',
+      text: 'white',
+    },
+  ];
+  var bkgColors = colors.map(function(color) {
+    return color.background;
+  });
+  var textColors = colors.map(function(color) {
+    return color.text;
+  });
+
+  document.addEventListener('DOMContentLoaded', function() {
+    Promise.all([
+      d3.json('https://cdn.freecodecamp.org/testable-projects-fcc/data/choropleth_map/counties.json'),
+      d3.json('https://cdn.freecodecamp.org/testable-projects-fcc/data/choropleth_map/for_user_education.json'),
+    ]).then(function([map, educations]) {
+      var getEducation = function(d) {
+        return educations.find(function(education) {
+          return education['fips'] === d['id'];
+        });
+      };
+
+      var getEduPercentage = function(d) {
+        var foundEducation = getEducation(d);
+
+        return foundEducation
+          ? foundEducation['bachelorsOrHigher']
+          : 0;
+      };
+
+      /**
+       * Tooltip
+       */
+      var tooltip = d3
+        .select('.svg-inner-wrapper')
+        .style('width', svgWidth + 'px')
+        .append('div')
+        .attr('id', 'tooltip')
+        .style('width', tooltipWidth + 'px')
+        .style('min-height', tooltipMinHeight + 'px')
+        .style('opacity', 0);
+
+      /**
+       * main svg
+       */
+      var svg = d3
+        .select('.svg-inner-wrapper')
+        .append('svg')
+        .attr('width', svgWidth)
+        .attr('height', svgHeight);
+
+      /**
+       * Legend
+       */
+      var eduPercentages = educations.map(function(education, i) {
+        return education['bachelorsOrHigher'];
+      });
+      var minPercentage = d3.min(eduPercentages);
+      var maxPercentage = d3.max(eduPercentages);
+      var percentageDomain = (function(min, max, count) {
+        var arr = [];
+        var step = (max - min) / count;
+        for (var i = 1; i < count; i++) {
+          arr.push(min + i * step);
+        }
+        return arr;
+      })(minPercentage, maxPercentage, colors.length);
+
+      var legendThreshold = d3
+        .scaleThreshold()
+        .domain(percentageDomain)
+        .range(bkgColors);
+
+      var legendTextThreshold = d3
+        .scaleThreshold()
+        .domain(percentageDomain)
+        .range(textColors);
+
+      var legendXScale = d3
+        .scaleLinear()
+        .domain([minPercentage, maxPercentage])
+        .range([0, legendWidth - (2 * legendPaddingX)]);
+
+      var legendThresholdData = legendThreshold.range().map(function(color) {
+        var d = legendThreshold.invertExtent(color);
+        if (d[0] === undefined) {
+          d[0] = legendXScale.domain()[0];
+        }
+        if (d[1] === undefined) {
+          d[1] = legendXScale.domain()[1];
+        }
+        return d;
+      });
+
+      var legendDomain = [];
+      for (var i = 0; i < legendThresholdData.length; i++) {
+        if (legendDomain.indexOf(legendThresholdData[i][0]) === -1) {
+          legendDomain.push(legendThresholdData[i][0]);
+        }
+
+        if (legendDomain.indexOf(legendThresholdData[i][1]) === -1) {
+          legendDomain.push(legendThresholdData[i][1]);
+        }
+      }
+
+      var legendXAxis = d3
+        .axisBottom()
+        .scale(legendXScale)
+        .tickValues(legendDomain)
+        .tickFormat(function (x) {
+          return Math.round(x) + '%';
+        });
+
+      var legendWrapper = d3
+        .select('.legend-inner-wrapper')
+        .append('svg')
+        .attr('width', legendWidth)
+        .attr('height', legendHeight);
+
+      var legend = legendWrapper
+        .append('g')
+        .attr('id', 'legend')
+        .attr('transform', 'translate(' + legendPaddingX + ',0)');
+
+      legend
+        .append('g')
+        .selectAll('rect')
+        .data(legendThresholdData)
+        .enter()
+        .append('rect')
+        .style('fill', function(d) {
+          return legendThreshold(d[0]);
+        })
+        .attr('x', function(d) {
+          return legendXScale(d[0]);
+        })
+        .attr('y', 0)
+        .attr('width', function(d) {
+          return d[0] && d[1] ? legendXScale(d[1]) - legendXScale(d[0]) : legendXScale(null);
+        })
+        .attr('height', (legendHeight - legendPaddingBottom));
+
+      legend
+        .append('g')
+        .attr('transform', 'translate(' + 0 + ',' + (legendHeight - legendPaddingBottom) + ')')
+        .call(legendXAxis);
+
+      /**
+       * Geo path (counties)
+       */
+      var path = d3.geoPath();
+
+      /**
+       * Counties
+       */
+      svg.selectAll('path')
+        .data(topojson.feature(map, map['objects']['counties']).features)
+        .enter()
+        .append('path')
+        .attr('class', 'county')
+        .attr('data-fips', function (d) {
+          return d.id;
+        })
+        .attr('data-education', getEduPercentage)
+        .attr('fill', function (d) {
+          return legendThreshold(getEduPercentage(d));
+        })
+        .attr('d', path)
+        .on('mouseenter', function(event, d) {
+          var $outerWrapper = document.querySelector('.svg-outer-wrapper');
+          var $innerWrapper = document.querySelector('.svg-inner-wrapper');
+
+          var education = getEducation(d);
+          var eduPercentage = getEduPercentage(d);
+
+          this.style.strokeWidth = '1';
+          this.style.stroke = '#fff';
+
+          tooltip.style('background', legendThreshold(eduPercentage));
+          tooltip.style('color', legendTextThreshold(education));
+
+          /**
+           * Modify x
+           */
+          var outerWrapperWidth = $outerWrapper.offsetWidth;
+          var innerWrapperWidth = $innerWrapper.offsetWidth;
+          var xGap = outerWrapperWidth > innerWrapperWidth ? (outerWrapperWidth - innerWrapperWidth) / 2 : 0;
+          var x = event.offsetX + xGap;
+          if (x + tooltipWidth + 10 > outerWrapperWidth) {
+            x = x - tooltipWidth - 10;
+          } else {
+            x = x + 10;
+          }
+
+          var html = '';
+          if (education) {
+            html = education['area_name'] + ', ' + education['state'] + ': ' + education['bachelorsOrHigher'] + '%';
+          }
+          tooltip.html(html);
+
+          /**
+           * Modify y
+           */
+          var outerWrapperHeight = $outerWrapper.offsetHeight;
+          var tooltipHeight = document.getElementById('tooltip').offsetHeight;
+          var y = event.offsetY;
+          if (y + tooltipHeight > outerWrapperHeight) {
+            y = (outerWrapperHeight - tooltipHeight - 20);
+          } else {
+            y = y - 20;
+          }
+
+          tooltip
+            .attr('data-education', eduPercentage)
+            .style('left', x + 'px')
+            .style('top', y + 'px');
+          tooltip.transition().duration(200).style('opacity', 0.9).style('display', 'block');
+        })
+        .on('mouseleave', function(event, d) {
+          this.style.strokeWidth = '0';
+          tooltip.transition().duration(200).style('opacity', 0).style('display', 'none');
+        });
+
+      /**
+       * States
+       */
+      svg
+        .append('path')
+        .datum(
+          topojson.mesh(map, map['objects']['states'], function (a, b) {
+            return a !== b;
+          })
+        )
+        .attr('class', 'states')
+        .attr('d', path);
+    });
+  });
+</script>
+</body>
+</html>
